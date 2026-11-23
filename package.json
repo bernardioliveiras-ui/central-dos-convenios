@@ -8,6 +8,7 @@
     "build": "vite build",
     "dev": "vite --host 127.0.0.1",
     "deploy": "npm run check:config && npm run build && wrangler deploy",
+    "deploy:cloudflare": "npm run build && wrangler deploy",
     "check:config": "node scripts/check-config.mjs",
     "db:local": "wrangler d1 migrations apply central_convenios --local",
     "db:remote": "wrangler d1 migrations apply central_convenios --remote"

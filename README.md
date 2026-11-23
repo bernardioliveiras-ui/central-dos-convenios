@@ -135,6 +135,10 @@ Com o D1 real configurado:
 npm run deploy
 ```
 
+### Configuração do pipeline Git/Cloudflare
+
+Se o deploy for disparado por um pipeline conectado ao GitHub, configure o **Build command** como `npm run build` e o **Deploy command** como `npx wrangler deploy` — ou use diretamente `npm run deploy` depois de preencher um `database_id` D1 válido. Não use somente `npx wrangler deploy` antes do build: a pasta `dist/` é gerada pelo Vite e está corretamente fora do Git. Se o pipeline já tiver um campo único de deploy, use `npm run deploy:cloudflare` após configurar o D1. Não crie uma pasta `dist` vazia e não use “Upload your static files” para esta versão, pois a aplicação inclui Worker, API e D1.
+
 O comando confere se existe ID D1, gera a pasta `dist/` e publica **código Worker + assets** na Cloudflare. A interface anterior de **“Upload your static files” não é suficiente para esta versão**, pois ela não liga a API ao banco D1 nem aos segredos. Use Wrangler ou GitHub com build/deploy equivalente.
 
 Antes da abertura real, faça testes ponta a ponta **no domínio final**: cadastro fictício com permissão da equipe, registro D1, fila Santana, MFA, reprovação, aprovação, chegada de e-mail, ativação, login do corretor, acesso negado a outro corretor e suspensão. Consulte `security-checklist.md`.
