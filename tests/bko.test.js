@@ -1,91 +1,80 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../src/server/worker.js';
-import {createTestDb,seedApplication,tokenFor,apiRequest,testEnv,withFakeAuth} from './db-helper.js';
+import {generateTotp} from '../src/server/crypto.js';
+import {createTestDb,seedApplication,apiRequest,testEnv,bootstrapAdmin} from './db-helper.js';
 
-function setup() {
-  const db=createTestDb(); seedApplication(db);
-  db.sqlite.prepare('INSERT INTO staff_accounts (auth_user_id,role,label) VALUES (?,?,?)').run('bko-1','BKO','Santana');
-  return {db, env:testEnv(db),jwt:tokenFor('bko-1')};
+async function setup(){
+  const db=createTestDb();seedApplication(db);
+  const env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  const mfa=await (await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env)).json();
+  const code=await generateTotp(mfa.secret);
+  const verified=await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env);
+  assert.equal(verified.status,200);
+  return {db,env,cookie};
 }
 
-test('sem MFA o BKO não vê cadastros; com MFA vê fila pendente',async()=>{
-  const {env,jwt}=setup();
-  await withFakeAuth(async()=>{
-    const denied=await worker.fetch(apiRequest('/api/bko/applications','GET',null,tokenFor('bko-1','aal1')),env);
-    assert.equal(denied.status,403);
-    const allowed=await worker.fetch(apiRequest('/api/bko/applications','GET',null,jwt),env);
-    assert.equal(allowed.status,200);
-    const data=await allowed.json();
-    assert.equal(data.applications.length,1);
-    assert.equal(data.applications[0].id,'app-1');
-  });
+test('reprovação exige motivo e grava trilha de auditoria',async()=>{
+  const {db,env,cookie}=await setup();
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject'},cookie),env)).status,400);
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject',reason:'Registro SUSEP não confirmado'},cookie),env)).status,200);
+  assert.equal(db.sqlite.prepare("SELECT status FROM applications WHERE id='app-1'").get().status,'REPROVADO');
+  assert.equal(db.sqlite.prepare("SELECT count(*) c FROM audit_events WHERE action='APPLICATION_REJECTED'").get().c,1);
 });
 
-test('reprovar exige motivo interno e gera auditoria',async()=>{
-  const {db,env,jwt}=setup();
-  await withFakeAuth(async()=>{
-    const denied=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject'},jwt),env);
-    assert.equal(denied.status,400);
-    const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject',reason:'SUSEP não validada'},jwt),env);
-    assert.equal(res.status,200);
-    assert.equal(db.sqlite.prepare('SELECT status FROM applications WHERE id=?').get('app-1').status,'REPROVADO');
-    assert.equal(db.sqlite.prepare('SELECT count(*) AS c FROM audit_events').get().c,1);
-  });
-});
-
-test('falha na auditoria não pode registrar decisão sem trilha de revisão',async()=>{
-  const {db,env,jwt}=setup();
+test('falha de auditoria impede decisão sem registro',async()=>{
+  const {db,env,cookie}=await setup();
   db.sqlite.exec("CREATE TRIGGER block_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END;");
-  await withFakeAuth(async()=>{
-    const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject',reason:'Documentos insuficientes'},jwt),env);
-    assert.equal(res.status,503);
-    assert.equal(db.sqlite.prepare('SELECT status FROM applications WHERE id=?').get('app-1').status,'PENDENTE');
-  });
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'reject',reason:'Documentos insuficientes'},cookie),env)).status,503);
+  assert.equal(db.sqlite.prepare("SELECT status FROM applications WHERE id='app-1'").get().status,'PENDENTE');
 });
 
-test('aprovação convida apenas uma vez, e vínculo do corretor é criado no D1',async()=>{
-  const {db,env,jwt}=setup();
-  await withFakeAuth(async(calls)=>{
-    const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},jwt),env);
-    assert.equal(res.status,200);
-    assert.equal(db.sqlite.prepare('SELECT status,invite_status FROM applications WHERE id=?').get('app-1').invite_status,'ENVIADO');
-    assert.equal(db.sqlite.prepare('SELECT auth_user_id FROM broker_profiles WHERE application_id=?').get('app-1').auth_user_id,'broker-1');
-    const again=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},jwt),env);
-    assert.equal(again.status,409);
-    assert.equal(calls.filter(c=>c.url.includes('/auth/v1/invite')).length,1);
-  });
+test('aprovação cria convite único com WhatsApp e ativação individual',async()=>{
+  const {db,env,cookie}=await setup();
+  const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},cookie),env);
+  assert.equal(res.status,200);
+  const issued=await res.json();
+  assert.match(issued.activationUrl,/\/portal.html#token=/);
+  assert.match(issued.whatsappUrl,/^https:\/\/wa\.me\/55/);
+  assert.ok(!JSON.stringify(db.sqlite.prepare('SELECT * FROM auth_tokens').get()).includes(issued.activationUrl.split('token=')[1]));
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},cookie),env)).status,409);
+  assert.equal(db.sqlite.prepare("SELECT count(*) c FROM auth_users WHERE role='CORRETOR'").get().c,1);
+  const token=issued.activationUrl.split('token=')[1];
+  const activated=await worker.fetch(apiRequest('/api/auth/activate','POST',{token,password:'Minha-Senha-Forte!2026'}),env);
+  assert.equal(activated.status,200);
+  assert.equal((await worker.fetch(apiRequest('/api/auth/activate','POST',{token,password:'Minha-Senha-Forte!2026'}),env)).status,400);
+  const login=await worker.fetch(apiRequest('/api/auth/login','POST',{email:'maria-app-1@example.com',password:'Minha-Senha-Forte!2026'}),env);
+  assert.equal(login.status,200);
+  const brokerCookie=login.headers.get('set-cookie').split(';')[0];
+  const me=await (await worker.fetch(apiRequest('/api/me','GET',null,brokerCookie),env)).json();
+  assert.equal(me.role,'CORRETOR');
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications','GET',null,brokerCookie),env)).status,403);
 });
 
-test('falha de convite fica visível sem liberar acesso a não vinculados',async()=>{
-  const {db,env,jwt}=setup();
-  await withFakeAuth(async()=>{
-    const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},jwt),env);
-    assert.equal(res.status,502);
-    assert.equal(db.sqlite.prepare('SELECT invite_status FROM applications WHERE id=?').get('app-1').invite_status,'ERRO');
-    assert.equal(db.sqlite.prepare('SELECT count(*) AS c FROM broker_profiles').get().c,0);
-  },{inviteFails:true});
+test('ADMIN pode reemitir convite revogando o anterior, mas token expirado falha',async()=>{
+  const {db,env,cookie}=await setup();
+  const first=await (await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},cookie),env)).json();
+  const renewed=await worker.fetch(apiRequest('/api/bko/applications/app-1/retry-invite','POST',{},cookie),env);
+  assert.equal(renewed.status,200);
+  const second=await renewed.json();
+  assert.notEqual(first.activationUrl,second.activationUrl);
+  assert.equal((await worker.fetch(apiRequest('/api/auth/activate','POST',{token:first.activationUrl.split('token=')[1],password:'Minha-Senha-Forte!2026'}),env)).status,400);
+  db.sqlite.prepare("UPDATE auth_tokens SET expires_at=1 WHERE used_at IS NULL").run();
+  assert.equal((await worker.fetch(apiRequest('/api/auth/activate','POST',{token:second.activationUrl.split('token=')[1],password:'Minha-Senha-Forte!2026'}),env)).status,400);
 });
 
-test('BKO pode reenviar convite falho, mas nunca duplicar o já enviado',async()=>{
-  const {db,env,jwt}=setup();
-  db.sqlite.prepare(`UPDATE applications SET status='APROVADO',invite_status='ERRO' WHERE id='app-1'`).run();
-  await withFakeAuth(async(calls)=>{
-    const retry=await worker.fetch(apiRequest('/api/bko/applications/app-1/retry-invite','POST',{},jwt),env);
-    assert.equal(retry.status,200);
-    assert.equal(db.sqlite.prepare('SELECT invite_status FROM applications WHERE id=?').get('app-1').invite_status,'ENVIADO');
-    const duplicate=await worker.fetch(apiRequest('/api/bko/applications/app-1/retry-invite','POST',{},jwt),env);
-    assert.equal(duplicate.status,409);
-    assert.equal(calls.filter(c=>c.url.includes('/auth/v1/invite')).length,1);
-  });
-});
-
-test('serviço de convite não configurado registra erro recuperável',async()=>{
-  const {db,env,jwt}=setup();
-  delete env.SUPABASE_SERVICE_ROLE_KEY;
-  await withFakeAuth(async()=>{
-    const res=await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},jwt),env);
-    assert.equal(res.status,503);
-    assert.equal(db.sqlite.prepare('SELECT invite_status FROM applications WHERE id=?').get('app-1').invite_status,'ERRO');
-  });
+test('recuperação ADMIN substitui senha do corretor ativo e revoga sessão anterior',async()=>{
+  const {env,cookie}=await setup();
+  const first=await (await worker.fetch(apiRequest('/api/bko/applications/app-1/decision','POST',{decision:'approve'},cookie),env)).json();
+  await worker.fetch(apiRequest('/api/auth/activate','POST',{token:first.activationUrl.split('token=')[1],password:'Senha-Antiga-Exemplo!2026'}),env);
+  const login=await worker.fetch(apiRequest('/api/auth/login','POST',{email:'maria-app-1@example.com',password:'Senha-Antiga-Exemplo!2026'}),env);
+  const oldCookie=login.headers.get('set-cookie').split(';')[0];
+  const reset=await worker.fetch(apiRequest('/api/bko/applications/app-1/reset-access','POST',{},cookie),env);
+  assert.equal(reset.status,200);
+  const data=await reset.json();assert.equal(data.purpose,'RESET');
+  const changed=await worker.fetch(apiRequest('/api/auth/activate','POST',{token:data.activationUrl.split('token=')[1],password:'Senha-Nova-Exemplo!2026'}),env);
+  assert.equal(changed.status,200);
+  assert.equal((await worker.fetch(apiRequest('/api/me','GET',null,oldCookie),env)).status,401);
+  assert.equal((await worker.fetch(apiRequest('/api/auth/login','POST',{email:'maria-app-1@example.com',password:'Senha-Antiga-Exemplo!2026'}),env)).status,401);
+  assert.equal((await worker.fetch(apiRequest('/api/auth/login','POST',{email:'maria-app-1@example.com',password:'Senha-Nova-Exemplo!2026'}),env)).status,200);
 });

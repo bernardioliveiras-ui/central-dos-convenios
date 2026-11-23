@@ -1,5 +1,7 @@
-# Este arquivo é MODELO. NÃO inserir valores reais aqui nem enviar em ZIP.
-# Para testes locais, crie um arquivo .dev.vars ignorado pelo Git.
-TURNSTILE_SECRET=INSERIR_NO_AMBIENTE_LOCAL
-RATE_LIMIT_SALT=USAR_VALOR_ALEATORIO_LONGO
-SUPABASE_SERVICE_ROLE_KEY=NAO_COMPARTILHAR
+# Este arquivo é MODELO. Nunca insira valores reais neste arquivo versionado.
+# Para testes locais, crie .dev.vars (ignorado pelo Git) com valores únicos e fortes.
+# Em produção, use exclusivamente `npx wrangler secret put NOME` no PowerShell.
+SESSION_SECRET=GERAR_SEGREDO_ALEATORIO_DE_48_BYTES
+RATE_LIMIT_SALT=GERAR_SALT_ALEATORIO_DE_48_BYTES
+ADMIN_SETUP_TOKEN=TEMPORARIO_REMOVER_APOS_BOOTSTRAP
+TURNSTILE_SECRET=GERAR_NO_PAINEL_TURNSTILE

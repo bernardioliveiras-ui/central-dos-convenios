@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "central-convenios-portal",
+  "name": "central-dos-convenios",
   "main": "src/server/worker.js",
   "compatibility_date": "2026-11-19",
   "workers_dev": true,
@@ -21,9 +21,7 @@
     "REGISTRATION_OPEN": "false",
     "LEGAL_APPROVED": "false",
     "TURNSTILE_SITE_KEY": "",
-    "SUPABASE_URL": "",
-    "SUPABASE_PUBLISHABLE_KEY": "",
-    "PORTAL_ORIGIN": "",
+    "PORTAL_ORIGIN": "https://central-dos-convenios.bernardioliveiras.workers.dev",
     "COMPANY_LEGAL_NAME": "",
     "PRIVACY_POLICY_URL": "",
     "PARTNER_TERMS_URL": ""

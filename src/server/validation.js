@@ -21,7 +21,9 @@ export function validateApplication(input) {
   const susep = str('susep', 50);
   const profile = str('profile', 12);
   const product = str('product', 18);
-  if (name.length < 5 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\+?[\d\s()\-]{10,25}$/.test(phone)) throw new InputError();
+  const phoneDigits=phone.replace(/\D/g,'');
+  if (name.length < 5 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\+?[\d\s()\-]{10,25}$/.test(phone)
+    || !([10,11].includes(phoneDigits.length)||(phoneDigits.startsWith('55')&&[12,13].includes(phoneDigits.length)))) throw new InputError();
   if (!/^[\p{L}\p{M}\s.'-]{2,100}$/u.test(city) || !new Set('AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ')).has(state)) throw new InputError();
   if (!/^[\p{L}\d./-]{4,50}$/u.test(susep)) throw new InputError();
   if (!['cpf', 'cnpj', 'ambos'].includes(profile) || !['saude', 'odontologico', 'pet', 'multiplos'].includes(product)) throw new InputError();

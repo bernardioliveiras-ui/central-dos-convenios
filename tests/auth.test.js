@@ -1,30 +1,59 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {verifyIdentity,requireStaff,AuthError} from '../src/server/auth.js';
-import {createTestDb,tokenFor,apiRequest,testEnv,withFakeAuth} from './db-helper.js';
+import worker from '../src/server/worker.js';
+import {hashPassword,verifyPassword,generateTotp,encryptSecret,decryptSecret} from '../src/server/crypto.js';
+import {createTestDb,apiRequest,testEnv,bootstrapAdmin} from './db-helper.js';
 
-test('token ausente ou rejeitado pelo provedor não autoriza', async () => {
-  const env=testEnv(createTestDb());
-  await assert.rejects(()=>verifyIdentity(apiRequest('/api/me'),env), e=>e instanceof AuthError && e.status===401);
-  await withFakeAuth(async ()=>{
-    await assert.rejects(()=>verifyIdentity(apiRequest('/api/me','GET',null,tokenFor('bko-1')),env),e=>e.status===401);
-  },{unauthorized:true});
+test('senhas usam salt independente e a senha incorreta não é aceita',async()=>{
+  const a=await hashPassword('Senha-Secreta-Exemplo!2026');
+  const b=await hashPassword('Senha-Secreta-Exemplo!2026');
+  assert.notEqual(a,b);
+  assert.equal(await verifyPassword('Senha-Secreta-Exemplo!2026',a),true);
+  assert.equal(await verifyPassword('outra senha',a),false);
 });
 
-test('token com identidade diferente da verificada pelo provedor é recusado',async ()=>{
-  await withFakeAuth(async()=>{
-    await assert.rejects(()=>verifyIdentity(apiRequest('/api/me','GET',null,tokenFor('outro')),testEnv(createTestDb())),e=>e.status===401);
-  });
+test('cifra TOTP fica protegida por segredo do Worker',async()=>{
+  const data=await encryptSecret('SECRETO123','chave-muito-longa-12345678901234567890');
+  assert.notEqual(data,'SECRETO123');
+  assert.equal(await decryptSecret(data,'chave-muito-longa-12345678901234567890'),'SECRETO123');
+  await assert.rejects(()=>decryptSecret(data,'outra-chave-longa-12345678901234567890'));
 });
 
-test('BKO deve ter conta ativa no D1 e MFA AAL2',async ()=>{
-  const db=createTestDb(); const env=testEnv(db);
-  db.sqlite.prepare('INSERT INTO staff_accounts (auth_user_id,role,label) VALUES (?,?,?)').run('bko-1','BKO','Santana');
-  await withFakeAuth(async()=>{
-    await assert.rejects(()=>requireStaff(apiRequest('/api/bko/applications','GET',null,tokenFor('bko-1','aal1')),env),e=>e.status===403);
-    const staff=await requireStaff(apiRequest('/api/bko/applications','GET',null,tokenFor('bko-1','aal2')),env);
-    assert.equal(staff.role,'BKO');
-    db.sqlite.prepare('UPDATE staff_accounts SET suspended_at=CURRENT_TIMESTAMP WHERE auth_user_id=?').run('bko-1');
-    await assert.rejects(()=>requireStaff(apiRequest('/api/bko/applications','GET',null,tokenFor('bko-1','aal2')),env),e=>e.status===403);
-  });
+test('TOTP corresponde ao vetor RFC 6238 usado por autenticadores externos',async()=>{
+  assert.equal(await generateTotp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',1),'287082');
+});
+
+test('bootstrap cria somente um ADMIN por token secreto e nunca cadastra outro',async()=>{
+  const db=createTestDb(),env=testEnv(db);
+  const wrong=await worker.fetch(apiRequest('/api/setup/admin','POST',{email:'Acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026',setupToken:'errado'}),env);
+  assert.equal(wrong.status,403);
+  const cookie=await bootstrapAdmin(worker,env);
+  assert.match(cookie,/^__Host-cdc_session=/);
+  const attempt=await worker.fetch(apiRequest('/api/setup/admin','POST',{email:'Acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026',setupToken:env.ADMIN_SETUP_TOKEN}),env);
+  assert.equal(attempt.status,409);
+  assert.equal(db.sqlite.prepare("SELECT count(*) c FROM auth_users WHERE role='ADMIN'").get().c,1);
+});
+
+test('ADMIN exige TOTP para acessar fila e rejeita reutilização do mesmo código',async()=>{
+  const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  const denied=await worker.fetch(apiRequest('/api/bko/applications','GET',null,cookie),env);
+  assert.equal(denied.status,403);
+  const setup=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env);
+  assert.equal(setup.status,200);
+  const {secret}=await setup.json();
+  const code=await generateTotp(secret);
+  const verify=await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env);
+  assert.equal(verify.status,200);
+  const replay=await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env);
+  assert.equal(replay.status,400);
+  const allowed=await worker.fetch(apiRequest('/api/bko/applications','GET',null,cookie),env);
+  assert.equal(allowed.status,200);
+});
+
+test('logout invalida a sessão e rejeita uso posterior do cookie',async()=>{
+  const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  const out=await worker.fetch(apiRequest('/api/auth/logout','POST',{},cookie),env);
+  assert.equal(out.status,200);
+  const denied=await worker.fetch(apiRequest('/api/me','GET',null,cookie),env);
+  assert.equal(denied.status,401);
 });

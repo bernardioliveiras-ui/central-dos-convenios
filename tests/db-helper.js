@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 export function createTestDb() {
   const sqlite=new DatabaseSync(':memory:');
   sqlite.exec(readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0002_cloudflare_auth.sql',import.meta.url),'utf8'));
   const prepare=(sql)=>{
     const statement=sqlite.prepare(sql);
     let args=[];
@@ -31,31 +32,22 @@ export function seedApplication(db,id='app-1') {
     .run(id,'Maria Oliveira',`maria-${id}@example.com`,'11999999999','Barueri','SP','123456','cpf','saude');
 }
 
-export function tokenFor(id,aal='aal2') {
-  const payload=Buffer.from(JSON.stringify({sub:id,aal,exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
-  return `test.${payload}.signature`;
-}
-
-export function apiRequest(path, method='GET', data, jwt) {
+export function apiRequest(path, method='GET', data, cookie, extraHeaders={}) {
   return new Request(`https://central.example${path}`,{
     method,
-    headers:{...(data && {'content-type':'application/json'}),...(jwt && {'authorization':`Bearer ${jwt}`})},
+    headers:{...(data && {'content-type':'application/json'}),...(cookie && {'cookie':cookie}),...(method!=='GET' && {'origin':'https://central.example'}),...extraHeaders},
     ...(data && {body:JSON.stringify(data)})
   });
 }
 
 export function testEnv(db) {
-  return {DB:db, SUPABASE_URL:'https://example.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-test', SUPABASE_SERVICE_ROLE_KEY:'secret-test', PORTAL_ORIGIN:'https://central.example'};
+  return {DB:db, SESSION_SECRET:'local-test-session-secret-please-change-1234567890',ADMIN_SETUP_TOKEN:'local-test-bootstrap-secret-1234567890',PORTAL_ORIGIN:'https://central.example',RATE_LIMIT_SALT:'local-test-rate-salt'};
 }
 
-export async function withFakeAuth(fn, options={}) {
-  const saved=globalThis.fetch;
-  const calls=[];
-  globalThis.fetch=async (url, request={})=>{
-    calls.push({url:String(url),request});
-    if (String(url).includes('/auth/v1/user')) return new Response(JSON.stringify({id:options.id??'bko-1',email:'bko@example.com'}),{status:options.unauthorized?401:200});
-    if (String(url).includes('/auth/v1/invite')) return new Response(JSON.stringify(options.inviteFails?{message:'failure'}:{id:'broker-1',email:'maria@example.com'}),{status:options.inviteFails?500:200});
-    throw Error('Unexpected network request');
-  };
-  try { return await fn(calls); } finally { globalThis.fetch=saved; }
+export async function bootstrapAdmin(worker,env) {
+  const response=await worker.fetch(apiRequest('/api/setup/admin','POST',{setupToken:env.ADMIN_SETUP_TOKEN,email:'Acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026'}),env);
+  if(response.status!==201)throw Error(`Bootstrap failed: ${response.status} ${await response.text()}`);
+  const login=await worker.fetch(apiRequest('/api/auth/login','POST',{email:'Acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026'}),env);
+  if(login.status!==200)throw Error(`Admin login failed: ${login.status}`);
+  return login.headers.get('set-cookie').split(';')[0];
 }
