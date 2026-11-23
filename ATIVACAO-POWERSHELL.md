@@ -9,19 +9,19 @@ Endereço do Worker: `https://central-dos-convenios.bernardioliveiras.workers.de
 Abra o PowerShell na pasta do projeto:
 
 ```powershell
-npm ci
-npm test
-npm run build
-npm run check:config
-npx wrangler whoami
-npx wrangler d1 list
-npx wrangler d1 migrations list central_convenios --remote
+npm.cmd ci
+npm.cmd test
+npm.cmd run build
+npm.cmd run check:config
+npx.cmd wrangler whoami
+npx.cmd wrangler d1 list
+npx.cmd wrangler d1 migrations list central_convenios --remote
 ```
 
 Confira nome/conta/`database_id` do `wrangler.jsonc` antes de alterar a base. **Faça backup D1** se ela já tem dados. A migração `0002_cloudflare_auth.sql` adiciona tabelas e preserva as inscrições existentes. Quando estiver tudo conferido:
 
 ```powershell
-npx wrangler d1 migrations apply central_convenios --remote
+npx.cmd wrangler d1 migrations apply central_convenios --remote
 ```
 
 **Importante:** contas Supabase antigas não migram sozinhas. É necessário convidar novamente os corretores existentes e ativar novas senhas. Não importe hashes ou secrets antigos sem revisão.
@@ -31,16 +31,12 @@ npx wrangler d1 migrations apply central_convenios --remote
 Depois de enviar o novo código ao GitHub e conferir que o deploy terminou no Worker certo, gere valores aleatórios exclusivos e insira-os manualmente. Exemplo PowerShell; cada comando `wrangler secret put` altera a versão implantada do Worker:
 
 ```powershell
-$SessionSecret = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
-$SessionSecret | npx wrangler secret put SESSION_SECRET
-Remove-Variable SessionSecret
-
-$RateSalt = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
-$RateSalt | npx wrangler secret put RATE_LIMIT_SALT
-Remove-Variable RateSalt
+node.exe -e "process.stdout.write(require('crypto').randomBytes(48).toString('base64'))" | npx.cmd wrangler secret put SESSION_SECRET
+node.exe -e "process.stdout.write(require('crypto').randomBytes(48).toString('base64'))" | npx.cmd wrangler secret put RATE_LIMIT_SALT
+node.exe -e "process.stdout.write(require('crypto').randomBytes(48).toString('base64'))" | npx.cmd wrangler secret put PASSWORD_PEPPER
 ```
 
-**Guarde `SESSION_SECRET` em um cofre seguro para eventual restauração e não o troque sem planejamento:** sua troca invalida sessões, tokens pendentes e a chave de cifragem do TOTP do ADMIN. É necessário um procedimento de recuperação do segundo fator antes de rotacionar. Nunca inclua esse segredo no Git, no ZIP ou no chat.
+**Importante:** a partir da versão 0.3.1 existem **três** secrets necessários à autenticação: `SESSION_SECRET`, `RATE_LIMIT_SALT` e `PASSWORD_PEPPER`. Quem já configurou os dois primeiros deve criar **apenas** `PASSWORD_PEPPER`; não regenere secrets existentes. `PASSWORD_PEPPER` protege as senhas mesmo se houver vazamento do D1. Guarde `SESSION_SECRET` e `PASSWORD_PEPPER` em cofre seguro, pois perder ou alterar o primeiro invalida sessões/tokens e o TOTP cifrado, e perder ou alterar o segundo impede a verificação das senhas existentes. Nunca inclua secrets no Git, ZIP ou chat.
 
 Consulte a configuração pública:
 
@@ -49,9 +45,9 @@ $Site = 'https://central-dos-convenios.bernardioliveiras.workers.dev'
 Invoke-RestMethod "$Site/api/public-config" | Format-List
 ```
 
-`authAvailable` deve ser `true` após o D1 e ambos os secrets estarem corretos. `registrationOpen` continuará `false` até os documentos e Turnstile serem aprovados.
+`authAvailable` deve ser `true` após o D1 e os três secrets estarem corretos. `registrationOpen` continuará `false` até os documentos e Turnstile serem aprovados.
 
-**Plano Cloudflare:** a modalidade Workers Free limita o tempo de CPU a 10 ms por requisição. O algoritmo de senha PBKDF2 com 600 mil iterações é propositalmente pesado; valide login/ativação no ambiente real e confira os erros de CPU. Pode ser necessário usar Workers Paid para esse fluxo sem enfraquecer a proteção de senhas.
+**Compatibilidade Cloudflare:** em produção, o Web Crypto do Worker limita PBKDF2 a 100 mil iterações por operação. Esta versão usa 100 mil iterações **mais HMAC-SHA256 com `PASSWORD_PEPPER` secreto e independente**, evitando verificação offline com apenas uma cópia do banco. Isso tem proteção diferente das 600 mil iterações recomendadas por OWASP, e deve ser avaliado na revisão de segurança. Workers Free também limita o tempo total de CPU a 10 ms por requisição; valide o login real e os logs. O plano Workers Paid pode ser necessário caso exceda o limite de CPU.
 
 ## 3. Criar o único ADMIN
 
@@ -60,30 +56,23 @@ E-mail **fixo**: `Acesso@centraldosconvenios.com.br`. Verifique antes que a Cent
 Gere um segredo de inicialização temporário e cadastre-o; mantenha a variável apenas no PowerShell **até finalizar a criação**:
 
 ```powershell
-$SetupToken = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
-$SetupToken | npx wrangler secret put ADMIN_SETUP_TOKEN
+$SetupToken = node.exe -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+if ($SetupToken.Length -eq 64) { $SetupToken | npx.cmd wrangler secret put ADMIN_SETUP_TOKEN } else { throw 'Token não gerado corretamente' }
 ```
 
 Após a publicação da nova versão com o secret, digite **sua senha pessoal** de 12 a 128 caracteres sem colocá-la no histórico do terminal:
 
 ```powershell
-$SecurePassword = Read-Host 'Escolha sua senha ADMIN (12 a 128 caracteres)' -AsSecureString
-$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
-try {
-  $Password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer)
-  $Payload = @{ setupToken=$SetupToken; email='Acesso@centraldosconvenios.com.br'; password=$Password } | ConvertTo-Json -Compress
-  Invoke-RestMethod -Uri "$Site/api/setup/admin" -Method POST -ContentType 'application/json' -Body $Payload
-} finally {
-  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Pointer)
-  Remove-Variable Password,Payload,SecurePassword -ErrorAction SilentlyContinue
-}
+$Cred = Get-Credential -UserName 'Acesso@centraldosconvenios.com.br' -Message 'Escolha sua senha ADMIN de 12 a 128 caracteres'
+$Body = @{ setupToken=$SetupToken; email='Acesso@centraldosconvenios.com.br'; password=$Cred.GetNetworkCredential().Password } | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "$Site/api/setup/admin" -Method POST -ContentType 'application/json' -Body $Body
 ```
 
 **Imediatamente após a confirmação de criação**, remova o secret temporário e a variável local:
 
 ```powershell
-npx wrangler secret delete ADMIN_SETUP_TOKEN
-Remove-Variable SetupToken
+npx.cmd wrangler secret delete ADMIN_SETUP_TOKEN
+Remove-Variable SetupToken,Cred,Body -ErrorAction SilentlyContinue
 ```
 
 Entre em `/portal.html` com o e-mail e a senha escolhida; adicione a chave fornecida ao Google/Microsoft Authenticator (TOTP), digite o código de seis dígitos e ative o segundo fator. O ADMIN só vê solicitações após isso. **Faça backup seguro do autenticador antes de usar em produção.** O portal não oferece recuperação automática de MFA; perda do autenticador requer procedimento manual de suporte em ambiente controlado.
@@ -106,8 +95,8 @@ Use somente dados de teste e contatos próprios/autorizados numa base de homolog
 Para demonstrar a análise sem liberar o formulário, você pode colocar **uma inscrição sintética apenas no D1 local** e usar `wrangler dev`:
 
 ```powershell
-npx wrangler d1 migrations apply central_convenios --local
-npx wrangler d1 execute central_convenios --local --command "INSERT INTO applications (id,name,email,phone,city,state,susep,profile,product) VALUES ('demo-local-1','Corretor de Demonstracao','teste-controlado@example.com','11999999999','Barueri','SP','DEMO0001','cpf','saude')"
+npx.cmd wrangler d1 migrations apply central_convenios --local
+npx.cmd wrangler d1 execute central_convenios --local --command "INSERT INTO applications (id,name,email,phone,city,state,susep,profile,product) VALUES ('demo-local-1','Corretor de Demonstracao','teste-controlado@example.com','11999999999','Barueri','SP','DEMO0001','cpf','saude')"
 ```
 
 O exemplo **não altera o D1 remoto** e o número/e-mail devem ser trocados por contatos de teste sob seu controle antes de abrir WhatsApp ou ativar o acesso. Para corretores reais é necessário ter autorização e documentos próprios aprovados.
@@ -121,7 +110,7 @@ Para abrir o formulário com dados reais:
 3. Crie Turnstile no hostname do Worker e coloque `TURNSTILE_SITE_KEY` (pública) em `wrangler.jsonc`. Configure `TURNSTILE_SECRET` pelo PowerShell:
 
 ```powershell
-npx wrangler secret put TURNSTILE_SECRET
+npx.cmd wrangler secret put TURNSTILE_SECRET
 ```
 
 4. Teste o Siteverify, hostname/action, fila, MFA, reprovação, WhatsApp, ativação, isolamento de corretores, perda de link, recuperação, rate limit e incidentes na sua conta.

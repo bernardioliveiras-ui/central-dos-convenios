@@ -1,11 +1,11 @@
-# Central dos Convênios — Portal de Parceiros v0.3
+# Central dos Convênios — Portal de Parceiros v0.3.1
 
 Projeto para GitHub → Cloudflare Workers + Cloudflare D1. **Não usa Supabase nem serviço externo de autenticação.** A implantação, as senhas e as contas são administradas manualmente pelo proprietário, via PowerShell e painel do portal. Nenhuma conta é provisionada pelo ZIP.
 
 ## O que funciona após a ativação manual
 
 - Landing page responsiva com logotipo/favicons atualizados sem fundo branco.
-- Login individual no Worker com hash forte de senha, sessões HttpOnly/Secure/SameSite, expiração, logout/revogação, limite de tentativas e segundo fator TOTP obrigatório para o único ADMIN.
+- Login individual no Worker com PBKDF2 compatível com o limite de produção da Cloudflare e HMAC usando `PASSWORD_PEPPER` independente, sessões HttpOnly/Secure/SameSite, expiração, logout/revogação, limite de tentativas e segundo fator TOTP obrigatório para o único ADMIN.
 - Única conta administrativa: `Acesso@centraldosconvenios.com.br`. A criação exige o segredo de inicialização e só é aceita uma vez.
 - Solicitações de credenciamento protegidas por Turnstile e bloqueadas até termos reais e aprovação jurídica estarem configurados.
 - Painel ADMIN para analisar SUSEP, aprovar/reprovar, auditar decisões, criar link individual de ativação de 24 horas, reemitir e recuperar acesso de corretor aprovado.
@@ -15,7 +15,7 @@ Projeto para GitHub → Cloudflare Workers + Cloudflare D1. **Não usa Supabase 
 
 ## Primeiro acesso
 
-Leia **[ATIVACAO-POWERSHELL.md](ATIVACAO-POWERSHELL.md)** para aplicar as duas migrações ao D1 certo, configurar `SESSION_SECRET`, `RATE_LIMIT_SALT`, `ADMIN_SETUP_TOKEN`, inicializar o ADMIN manualmente, apagar o segredo de inicialização e ligar o Turnstile quando a documentação estiver aprovada.
+Leia **[ATIVACAO-POWERSHELL.md](ATIVACAO-POWERSHELL.md)** para aplicar as duas migrações ao D1 certo, configurar `SESSION_SECRET`, `RATE_LIMIT_SALT`, `PASSWORD_PEPPER` e o temporário `ADMIN_SETUP_TOKEN`, inicializar o ADMIN manualmente, apagar o segredo de inicialização e ligar o Turnstile quando a documentação estiver aprovada. Quem já migrou o D1 e tem `SESSION_SECRET` e `RATE_LIMIT_SALT` **não deve criar novamente esses secrets**: apenas acrescente `PASSWORD_PEPPER`.
 
 No terminal do projeto:
 

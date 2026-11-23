@@ -1,6 +1,8 @@
 const enc=new TextEncoder();
 const dec=new TextDecoder();
-const PASSWORD_ITERATIONS=600000;
+// O runtime de produção da Cloudflare limita cada operação PBKDF2 a 100 mil iterações.
+// HMAC com segredo independente evita ataque offline com somente o dump do D1.
+const PASSWORD_ITERATIONS=100000;
 const B32='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 export const nowSeconds=()=>Math.floor(Date.now()/1000);
@@ -25,24 +27,28 @@ export function safeEqual(a,b){
 export function validPassword(password){
   return typeof password==='string' && password.length>=12 && password.length<=128 && enc.encode(password).length<=256;
 }
-async function derivedPassword(password,salt,iterations=PASSWORD_ITERATIONS){
-  const key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);
+async function derivedPassword(password,salt,pepper){
+  if(typeof pepper!=='string'||pepper.length<32)throw Error('PASSWORD_PEPPER ausente ou insuficiente');
+  const hmac=await crypto.subtle.importKey('raw',enc.encode(pepper),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const keyedPassword=await crypto.subtle.sign('HMAC',hmac,enc.encode(password));
+  const key=await crypto.subtle.importKey('raw',keyedPassword,'PBKDF2',false,['deriveBits']);
+  const iterations=PASSWORD_ITERATIONS;
   return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256));
 }
-export async function hashPassword(password){
+export async function hashPassword(password,pepper){
   if(!validPassword(password))throw Error('Senha deve ter de 12 a 128 caracteres.');
   const salt=crypto.getRandomValues(new Uint8Array(16));
-  const hash=await derivedPassword(password,salt);
-  return `pbkdf2-sha256$${PASSWORD_ITERATIONS}$${bytesToBase64Url(salt)}$${bytesToBase64Url(hash)}`;
+  const hash=await derivedPassword(password,salt,pepper);
+  return `pbkdf2-hmacpepper-sha256$${PASSWORD_ITERATIONS}$${bytesToBase64Url(salt)}$${bytesToBase64Url(hash)}`;
 }
-export async function verifyPassword(password,record){
+export async function verifyPassword(password,record,pepper){
   if(typeof password!=='string'||password.length>128||!record)return false;
   const parts=record.split('$');
-  if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||parts[1]!==String(PASSWORD_ITERATIONS))return false;
+  if(parts.length!==4||parts[0]!=='pbkdf2-hmacpepper-sha256'||parts[1]!==String(PASSWORD_ITERATIONS))return false;
   try{
     const salt=base64UrlToBytes(parts[2]),expect=base64UrlToBytes(parts[3]);
     if(salt.length!==16||expect.length!==32)return false;
-    const actual=await derivedPassword(password,salt);
+    const actual=await derivedPassword(password,salt,pepper);
     let difference=0;for(let i=0;i<32;i++)difference|=actual[i]^expect[i];
     return difference===0;
   }catch{return false;}

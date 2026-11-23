@@ -5,7 +5,8 @@
 ## Infraestrutura e credenciais
 
 - [ ] D1 exclusivo criado e migração aplicada em produção.
-- [ ] Segredos `SESSION_SECRET`, `RATE_LIMIT_SALT` e `TURNSTILE_SECRET` definidos somente no armazenamento seguro da Cloudflare.
+- [ ] Segredos `SESSION_SECRET`, `PASSWORD_PEPPER`, `RATE_LIMIT_SALT` e `TURNSTILE_SECRET` definidos somente no armazenamento seguro da Cloudflare.
+- [ ] Trabalho de hash no Worker em produção validado (100 mil PBKDF2 + HMAC com pepper), além do limite de CPU do plano contratado.
 - [ ] `PORTAL_ORIGIN` conferido; nenhum valor Supabase necessário.
 - [ ] Bootstrap exclusivo do ADMIN concluído e `ADMIN_SETUP_TOKEN` **apagado** dos secrets do Worker.
 - [ ] MFA TOTP do único ADMIN configurado; sessão sem segundo fator rejeitada no backend.

@@ -29,7 +29,7 @@ test('cadastro não pode abrir sem política e termos aprovados pela empresa',as
 
 test('Turnstile recusado não grava dados no banco', async () => {
   let prepared = false;
-  const env={ REGISTRATION_OPEN:'true', TURNSTILE_SECRET:'secret', TURNSTILE_SITE_KEY:'site', RATE_LIMIT_SALT:'test-salt-is-at-least-16', SESSION_SECRET:'test-session-secret-long-enough-1234567890', LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA',DB:{ prepare(){ prepared=true; throw Error('não deveria gravar'); } }};
+  const env={ REGISTRATION_OPEN:'true', TURNSTILE_SECRET:'secret', TURNSTILE_SITE_KEY:'site', RATE_LIMIT_SALT:'test-salt-is-at-least-16', SESSION_SECRET:'test-session-secret-long-enough-1234567890', PASSWORD_PEPPER:'test-password-pepper-long-enough-1234567890', LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA',DB:{ prepare(){ prepared=true; throw Error('não deveria gravar'); } }};
   const saved=globalThis.fetch;
   globalThis.fetch=async ()=>new Response(JSON.stringify({success:false}), {status:200});
   try {
@@ -40,7 +40,7 @@ test('Turnstile recusado não grava dados no banco', async () => {
 
 test('Turnstile não aceita resposta de domínio ou ação diferente',async()=>{
   const db=createTestDb();
-  const env={DB:db,REGISTRATION_OPEN:'true',TURNSTILE_SECRET:'secret',TURNSTILE_SITE_KEY:'site',RATE_LIMIT_SALT:'test-salt-is-at-least-16',SESSION_SECRET:'test-session-secret-long-enough-1234567890',LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA'};
+  const env={DB:db,REGISTRATION_OPEN:'true',TURNSTILE_SECRET:'secret',TURNSTILE_SITE_KEY:'site',RATE_LIMIT_SALT:'test-salt-is-at-least-16',SESSION_SECRET:'test-session-secret-long-enough-1234567890',PASSWORD_PEPPER:'test-password-pepper-long-enough-1234567890',LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA'};
   const saved=globalThis.fetch;
   globalThis.fetch=async()=>new Response(JSON.stringify({success:true,hostname:'outro-site.example',action:'broker_signup'}));
   try{
@@ -52,7 +52,7 @@ test('Turnstile não aceita resposta de domínio ou ação diferente',async()=>{
 
 test('cadastro real é salvo uma vez, mas e-mail repetido não pode ser enumerado',async()=>{
   const db=createTestDb();
-  const env={DB:db,REGISTRATION_OPEN:'true',TURNSTILE_SECRET:'secret',TURNSTILE_SITE_KEY:'site',RATE_LIMIT_SALT:'test-salt-is-at-least-16',SESSION_SECRET:'test-session-secret-long-enough-1234567890',LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA'};
+  const env={DB:db,REGISTRATION_OPEN:'true',TURNSTILE_SECRET:'secret',TURNSTILE_SITE_KEY:'site',RATE_LIMIT_SALT:'test-salt-is-at-least-16',SESSION_SECRET:'test-session-secret-long-enough-1234567890',PASSWORD_PEPPER:'test-password-pepper-long-enough-1234567890',LEGAL_APPROVED:'true',PRIVACY_POLICY_URL:'https://central.example/privacidade',PARTNER_TERMS_URL:'https://central.example/termos',COMPANY_LEGAL_NAME:'Central Exemplo LTDA'};
   const saved=globalThis.fetch;
   globalThis.fetch=async()=>new Response(JSON.stringify({success:true,hostname:'central.example',action:'broker_signup'}));
   try{

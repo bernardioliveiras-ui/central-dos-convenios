@@ -5,11 +5,29 @@ import {hashPassword,verifyPassword,generateTotp,encryptSecret,decryptSecret} fr
 import {createTestDb,apiRequest,testEnv,bootstrapAdmin} from './db-helper.js';
 
 test('senhas usam salt independente e a senha incorreta não é aceita',async()=>{
-  const a=await hashPassword('Senha-Secreta-Exemplo!2026');
-  const b=await hashPassword('Senha-Secreta-Exemplo!2026');
+  const pepper='test-password-pepper-1234567890123456';
+  const a=await hashPassword('Senha-Secreta-Exemplo!2026',pepper);
+  const b=await hashPassword('Senha-Secreta-Exemplo!2026',pepper);
   assert.notEqual(a,b);
-  assert.equal(await verifyPassword('Senha-Secreta-Exemplo!2026',a),true);
-  assert.equal(await verifyPassword('outra senha',a),false);
+  assert.equal(await verifyPassword('Senha-Secreta-Exemplo!2026',a,pepper),true);
+  assert.equal(await verifyPassword('outra senha',a,pepper),false);
+});
+
+test('senha protegida com pepper funciona sob limite de 100 mil iterações do Worker',async()=>{
+  const password='Senha-Especial-Cloudflare!2026';
+  const pepper='pepper-unico-para-ambiente-1234567890';
+  const record=await hashPassword(password,pepper);
+  const iterations=Number(record.split('$')[1]);
+  assert.ok(iterations>0&&iterations<=100000,'Worker de produção rejeita PBKDF2 acima de 100000');
+  assert.equal(await verifyPassword(password,record,pepper),true);
+  assert.equal(await verifyPassword(password,record,'outro-pepper-para-ambiente-1234567890'),false);
+});
+
+test('portal não declara autenticação pronta sem PASSWORD_PEPPER',async()=>{
+  const env=testEnv(createTestDb());
+  delete env.PASSWORD_PEPPER;
+  const publicConfig=await (await worker.fetch(apiRequest('/api/public-config'),env)).json();
+  assert.equal(publicConfig.authAvailable,false);
 });
 
 test('cifra TOTP fica protegida por segredo do Worker',async()=>{

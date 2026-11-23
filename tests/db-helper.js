@@ -41,7 +41,7 @@ export function apiRequest(path, method='GET', data, cookie, extraHeaders={}) {
 }
 
 export function testEnv(db) {
-  return {DB:db, SESSION_SECRET:'local-test-session-secret-please-change-1234567890',ADMIN_SETUP_TOKEN:'local-test-bootstrap-secret-1234567890',PORTAL_ORIGIN:'https://central.example',RATE_LIMIT_SALT:'local-test-rate-salt'};
+  return {DB:db, SESSION_SECRET:'local-test-session-secret-please-change-1234567890',PASSWORD_PEPPER:'local-test-password-pepper-123456789012345',ADMIN_SETUP_TOKEN:'local-test-bootstrap-secret-1234567890',PORTAL_ORIGIN:'https://central.example',RATE_LIMIT_SALT:'local-test-rate-salt'};
 }
 
 export async function bootstrapAdmin(worker,env) {

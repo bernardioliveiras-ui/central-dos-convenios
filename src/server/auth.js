@@ -7,7 +7,7 @@ export class AuthError extends Error{
 export const SESSION_COOKIE='__Host-cdc_session';
 export const SESSION_SECONDS=12*3600;
 
-export function authReady(env){return Boolean(env.DB&&typeof env.SESSION_SECRET==='string'&&env.SESSION_SECRET.length>=32&&typeof env.RATE_LIMIT_SALT==='string'&&env.RATE_LIMIT_SALT.length>=16);}
+export function authReady(env){return Boolean(env.DB&&typeof env.SESSION_SECRET==='string'&&env.SESSION_SECRET.length>=32&&typeof env.PASSWORD_PEPPER==='string'&&env.PASSWORD_PEPPER.length>=32&&typeof env.RATE_LIMIT_SALT==='string'&&env.RATE_LIMIT_SALT.length>=16);}
 
 export function sessionCookie(token,maxAge=SESSION_SECONDS){
   return `${SESSION_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`;

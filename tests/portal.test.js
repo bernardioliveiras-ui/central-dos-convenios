@@ -7,7 +7,7 @@ import {estimateDemoPlan} from '../src/client/simulation.js';
 import {createTestDb,seedApplication,apiRequest,testEnv,bootstrapAdmin} from './db-helper.js';
 
 async function brokerSession(db,env,id,appId,state='ACTIVE'){
-  const passwordHash=await hashPassword('Senha-Corretor-Exemplo!2026');
+  const passwordHash=await hashPassword('Senha-Corretor-Exemplo!2026',env.PASSWORD_PEPPER);
   db.sqlite.prepare('INSERT INTO auth_users(id,email,role,password_hash,state) VALUES (?,?,?,?,?)')
     .run(id,`${id}@example.com`,'CORRETOR',passwordHash,state);
   db.sqlite.prepare('INSERT INTO broker_profiles(auth_user_id,application_id) VALUES (?,?)').run(id,appId);

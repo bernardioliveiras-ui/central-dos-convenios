@@ -109,7 +109,7 @@ async function bootstrap(request,env){
   const email='acesso@centraldosconvenios.com.br';
   if(String(input.email||'').toLowerCase()!==email)return error('E-mail do ADMIN não autorizado.',400);
   requirePassword(input.password);
-  const id=crypto.randomUUID(),passwordHash=await hashPassword(input.password);
+  const id=crypto.randomUUID(),passwordHash=await hashPassword(input.password,env.PASSWORD_PEPPER);
   await env.DB.batch([
     env.DB.prepare("INSERT INTO auth_users(id,email,role,password_hash,state) VALUES (?,?,'ADMIN',?,'ACTIVE')").bind(id,email,passwordHash),
     env.DB.prepare("INSERT INTO audit_events(id,actor_auth_id,action,target_type,target_id) VALUES (?,?,'ADMIN_CREATED','auth_user',?)").bind(crypto.randomUUID(),id,id)
@@ -128,10 +128,10 @@ async function login(request,env){
   const account=await env.DB.prepare('SELECT id,password_hash,state FROM auth_users WHERE email=?').bind(email).first();
   if(!account?.password_hash){
     // Mesmo custo aproximado de derivação para não facilitar enumeração de contas.
-    await hashPassword('Senha-Falsa-De-Comparacao-Do-Servidor-2026');
+    await hashPassword('Senha-Falsa-De-Comparacao-Do-Servidor-2026',env.PASSWORD_PEPPER);
     return error('Credenciais inválidas.',401);
   }
-  if(!await verifyPassword(password,account.password_hash)||account.state!=='ACTIVE')return error('Credenciais inválidas.',401);
+  if(!await verifyPassword(password,account.password_hash,env.PASSWORD_PEPPER)||account.state!=='ACTIVE')return error('Credenciais inválidas.',401);
   const cookie=await createSession(env,account.id);
   const res=json({message:'Acesso autenticado.'});
   res.headers.set('set-cookie',cookie);
@@ -193,7 +193,7 @@ async function activate(request,env){
     JOIN auth_users u ON u.id=t.user_id WHERE t.token_hash=? AND t.used_at IS NULL AND t.expires_at>?`)
     .bind(tokenHash,current).first();
   if(!token||(token.purpose==='INVITE'&&token.state!=='INVITED')||(token.purpose==='RESET'&&token.state!=='ACTIVE'))return error('Convite inválido ou expirado.',400);
-  const passwordHash=await hashPassword(input.password);
+  const passwordHash=await hashPassword(input.password,env.PASSWORD_PEPPER);
   const results=await env.DB.batch([
     env.DB.prepare('UPDATE auth_tokens SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?')
       .bind(current,tokenHash,current),
