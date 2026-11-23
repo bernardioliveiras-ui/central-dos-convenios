@@ -48,7 +48,7 @@ export async function revokeSession(request,env){
 export async function requireStaff(request,env){
   const identity=await verifyIdentity(request,env);
   if(identity.role!=='ADMIN')throw new AuthError('Conta sem permissão administrativa.',403);
-  if(!identity.mfa_enabled||!identity.mfa_verified)throw new AuthError('A verificação de dois fatores é obrigatória.',403);
+  if(identity.mfa_enabled&&!identity.mfa_verified)throw new AuthError('Confirme o código do autenticador para continuar.',403);
   return identity;
 }
 

@@ -114,7 +114,7 @@ async function bootstrap(request,env){
     env.DB.prepare("INSERT INTO auth_users(id,email,role,password_hash,state) VALUES (?,?,'ADMIN',?,'ACTIVE')").bind(id,email,passwordHash),
     env.DB.prepare("INSERT INTO audit_events(id,actor_auth_id,action,target_type,target_id) VALUES (?,?,'ADMIN_CREATED','auth_user',?)").bind(crypto.randomUUID(),id,id)
   ]);
-  return json({message:'ADMIN criado. Remova o secret ADMIN_SETUP_TOKEN e configure MFA no primeiro login.'},201);
+  return json({message:'ADMIN criado. Remova o secret ADMIN_SETUP_TOKEN. A verificação em duas etapas pode ser ativada futuramente no painel.'},201);
 }
 
 async function login(request,env){
@@ -149,16 +149,16 @@ async function mfaSetup(request,env){
   const identity=await verifyIdentity(request,env);
   if(identity.role!=='ADMIN')throw new AuthError('Acesso não permitido.',403);
   if(identity.mfa_enabled)return error('Autenticador já configurado.',409);
-  let row=await env.DB.prepare('SELECT mfa_secret FROM auth_users WHERE id=?').bind(identity.id).first();
-  let secret;
-  if(row?.mfa_secret)secret=await decryptSecret(row.mfa_secret,env.SESSION_SECRET);
-  else{
-    secret=newTotpSecret();
-    await env.DB.prepare('UPDATE auth_users SET mfa_secret=? WHERE id=? AND mfa_secret IS NULL')
-      .bind(await encryptSecret(secret,env.SESSION_SECRET),identity.id).run();
-    row=await env.DB.prepare('SELECT mfa_secret FROM auth_users WHERE id=?').bind(identity.id).first();
-    secret=await decryptSecret(row.mfa_secret,env.SESSION_SECRET);
-  }
+  await authRate(request,env,'mfa-setup',identity.id,8);
+  const input=await parseSmallJson(request);
+  if(typeof input.password!=='string')return error('Confirme sua senha atual para ativar a proteção.',400);
+  const account=await env.DB.prepare('SELECT password_hash FROM auth_users WHERE id=?').bind(identity.id).first();
+  if(!account?.password_hash||!await verifyPassword(input.password,account.password_hash,env.PASSWORD_PEPPER))return error('Senha atual incorreta.',401);
+  // Troca qualquer chave pendente (inclusive a que possa ter aparecido em uma captura de tela).
+  const secret=newTotpSecret();
+  const updated=await env.DB.prepare('UPDATE auth_users SET mfa_secret=?, mfa_last_counter=-1 WHERE id=? AND mfa_enabled=0')
+    .bind(await encryptSecret(secret,env.SESSION_SECRET),identity.id).run();
+  if(updated.meta.changes!==1)return error('O autenticador já foi ativado. Entre novamente.',409);
   const label=encodeURIComponent('Central dos Convenios:acesso@centraldosconvenios.com.br');
   return json({secret,otpauthUrl:`otpauth://totp/${label}?secret=${secret}&issuer=Central%20dos%20Convenios&digits=6&period=30`});
 }
@@ -285,7 +285,7 @@ async function regenerateAccess(request,env,id,purpose='INVITE') {
 
 async function myProfile(request,env) {
   const identity=await verifyIdentity(request,env);
-  if(identity.role==='ADMIN')return json({role:'ADMIN',label:'Central dos Convênios',mfaRequired:!identity.mfa_verified,mfaEnabled:Boolean(identity.mfa_enabled)});
+  if(identity.role==='ADMIN')return json({role:'ADMIN',label:'Central dos Convênios',mfaRequired:Boolean(identity.mfa_enabled&&!identity.mfa_verified),mfaEnabled:Boolean(identity.mfa_enabled)});
   const broker=await requireBroker(request,env);
   return json({role:'CORRETOR',name:broker.name,product:broker.product,quotesEnabled:false,demoSimulation:true});
 }

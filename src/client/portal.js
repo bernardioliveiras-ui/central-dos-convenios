@@ -1,12 +1,13 @@
 import './styles.css';
 import {estimateDemoPlan} from './simulation.js';
+import {adminAccessView} from './portal-access.js';
 
 const $=id=>document.getElementById(id);
-const viewIds=['login-form','password-setup-form','reset-form','mfa-enroll-form','mfa-challenge-form'];
+const viewIds=['login-form','password-setup-form','reset-form','mfa-password-form','mfa-enroll-form','mfa-challenge-form'];
 let activationToken=null;
 $('new-password').minLength=12;
 $('confirm-password').minLength=12;
-function showForm(id){for(const formId of viewIds)$(formId).hidden=formId!==id;$('back-to-login').hidden=id==='login-form';$('forgot-password').hidden=id!=='login-form';}
+function showForm(id){for(const formId of viewIds)$(formId).hidden=formId!==id;$('back-to-login').hidden=['login-form','mfa-password-form','mfa-enroll-form'].includes(id);$('forgot-password').hidden=id!=='login-form';}
 function showMessage(message,isError=true){$('login-result').textContent=message;$('login-result').classList.toggle('error',isError);}
 function setNotice(message){$('portal-alert').hidden=!message;$('portal-alert').textContent=message||'';}
 function setBusy(form,busy){for(const button of form.querySelectorAll('button'))button.disabled=busy;}
@@ -39,13 +40,12 @@ async function init(){
 async function enterPortal(silent=false){
   try{
     const profile=await api('/api/me');
-    if(profile.role==='ADMIN'&&profile.mfaRequired){
+    const mfaView=adminAccessView(profile);
+    if(mfaView.challenge){
       $('portal-login').hidden=false;$('portal-app').hidden=true;
-      if(profile.mfaEnabled){
-        $('login-title').textContent='Confirme sua identidade.';
-        $('login-subtitle').textContent='Digite o código do seu aplicativo autenticador.';
-        showForm('mfa-challenge-form');
-      }else await startMfaSetup();
+      $('login-title').textContent='Confirme sua identidade.';
+      $('login-subtitle').textContent='Digite o código do seu aplicativo autenticador.';
+      showForm('mfa-challenge-form');
       return;
     }
     $('portal-login').hidden=true;$('portal-app').hidden=false;
@@ -54,7 +54,10 @@ async function enterPortal(silent=false){
     $('dashboard-title').textContent=profile.role==='CORRETOR'?`Olá, ${profile.name.split(' ')[0]}.`:'Painel de credenciamento.';
     $('dashboard-subtitle').textContent=profile.role==='CORRETOR'?'Simule cenários demonstrativos para apresentar aos seus clientes.':'Analise os pedidos, gere acessos e envie as boas-vindas pelo WhatsApp.';
     $('broker-view').hidden=profile.role!=='CORRETOR';$('bko-view').hidden=profile.role==='CORRETOR';
-    if(profile.role==='CORRETOR')mountSimulator();else await loadApplications();
+    if(profile.role==='CORRETOR')mountSimulator();else{
+      ensureAdminMfaControl().hidden=!mfaView.offerEnrollment;
+      await loadApplications();
+    }
     showMessage('');
   }catch(e){
     $('portal-app').hidden=true;$('portal-login').hidden=false;
@@ -63,16 +66,53 @@ async function enterPortal(silent=false){
   }
 }
 
-async function startMfaSetup(){
-  const enrollment=await api('/api/auth/mfa/setup',{method:'POST',body:'{}'});
+function ensureAdminMfaControl(){
+  let section=$('admin-security');
+  if(section)return section;
+  section=document.createElement('section');section.id='admin-security';section.className='admin-security-card';
+  const info=textEl('div','','');
+  info.append(textEl('strong','','Segurança do administrador'),textEl('p','','A verificação em duas etapas é opcional. Você pode ativá-la quando quiser.'));
+  const button=textEl('button','small-outline','Ativar verificação em duas etapas ↗');button.id='enable-admin-mfa';button.type='button';
+  button.addEventListener('click',()=>{
+    $('portal-app').hidden=true;$('portal-login').hidden=false;
+    $('login-title').textContent='Ativar verificação em duas etapas.';
+    $('login-subtitle').textContent='Confirme sua senha atual antes de cadastrar um autenticador.';
+    showMessage('');showForm('mfa-password-form');$('mfa-password').focus();
+  });
+  section.append(info,button);$('bko-view').prepend(section);
+  return section;
+}
+
+async function startMfaSetup(password){
+  const enrollment=await api('/api/auth/mfa/setup',{method:'POST',body:JSON.stringify({password})});
   $('mfa-qr').replaceChildren();
   $('mfa-qr').append(textEl('p','', 'No Google Authenticator, Microsoft Authenticator ou outro app TOTP, adicione a chave abaixo:'),textEl('code','mfa-secret',enrollment.secret));
   const tip=textEl('p','', 'Não compartilhe esta chave. Depois, digite o código de seis dígitos gerado pelo aplicativo.');
   $('mfa-qr').append(tip);
   $('login-title').textContent='Proteja seu acesso ADMIN.';
-  $('login-subtitle').textContent='A verificação em duas etapas é obrigatória para acessar credenciamentos.';
+  $('login-subtitle').textContent='Opcional: ao ativar, os próximos logins também pedirão o código do aplicativo.';
   showForm('mfa-enroll-form');
+  $('portal-app').hidden=true;$('portal-login').hidden=false;
 }
+
+const mfaPasswordForm=document.createElement('form');mfaPasswordForm.id='mfa-password-form';mfaPasswordForm.hidden=true;
+const passwordLabel=textEl('label','','Confirme sua senha ADMIN');
+const mfaPassword=document.createElement('input');mfaPassword.id='mfa-password';mfaPassword.type='password';mfaPassword.required=true;mfaPassword.autocomplete='current-password';
+passwordLabel.append(mfaPassword);
+const confirmMfaPassword=textEl('button','btn btn-orange btn-form','Continuar com segurança ↗');confirmMfaPassword.type='submit';
+const cancelMfaPassword=textEl('button','text-button','Voltar ao painel');cancelMfaPassword.type='button';
+cancelMfaPassword.addEventListener('click',()=>{mfaPassword.value='';enterPortal();});
+mfaPasswordForm.append(passwordLabel,confirmMfaPassword,cancelMfaPassword);$('login-form').after(mfaPasswordForm);
+mfaPasswordForm.addEventListener('submit',async event=>{
+  event.preventDefault();const form=event.currentTarget;setBusy(form,true);showMessage('');
+  const password=mfaPassword.value;mfaPassword.value='';
+  try{await startMfaSetup(password);}catch(e){showMessage(e.message);}finally{setBusy(form,false);}
+});
+
+const cancelMfa=textEl('button','text-button','Voltar ao painel sem ativar');
+cancelMfa.id='cancel-admin-mfa';cancelMfa.type='button';
+cancelMfa.addEventListener('click',()=>enterPortal());
+$('mfa-enroll-form').append(cancelMfa);
 
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();const form=event.currentTarget;setBusy(form,true);showMessage('');

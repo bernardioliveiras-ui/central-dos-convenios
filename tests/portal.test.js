@@ -44,7 +44,7 @@ test('pedido pendente, suspensão ou conta revogada bloqueiam o corretor',async(
 
 test('nova sessão ADMIN não reutiliza código TOTP já aceito em outra sessão',async()=>{
   const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
-  const setup=await (await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env)).json();
+  const setup=await (await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Admin-Demonstracao!2026'},cookie),env)).json();
   const code=await generateTotp(setup.secret);
   assert.equal((await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env)).status,200);
   const fresh=await worker.fetch(apiRequest('/api/auth/login','POST',{email:'acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026'}),env);

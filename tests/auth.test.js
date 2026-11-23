@@ -52,13 +52,49 @@ test('bootstrap cria somente um ADMIN por token secreto e nunca cadastra outro',
   assert.equal(db.sqlite.prepare("SELECT count(*) c FROM auth_users WHERE role='ADMIN'").get().c,1);
 });
 
-test('ADMIN exige TOTP para acessar fila e rejeita reutilização do mesmo código',async()=>{
+test('ADMIN sem MFA ativado acessa fila por senha e chave pendente não bloqueia o painel',async()=>{
   const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
-  const denied=await worker.fetch(apiRequest('/api/bko/applications','GET',null,cookie),env);
-  assert.equal(denied.status,403);
-  const setup=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env);
+  db.sqlite.prepare("UPDATE auth_users SET mfa_secret='chave-antiga-pendente' WHERE role='ADMIN'").run();
+  const me=await (await worker.fetch(apiRequest('/api/me','GET',null,cookie),env)).json();
+  assert.equal(me.mfaRequired,false);
+  assert.equal(me.mfaEnabled,false);
+  const allowed=await worker.fetch(apiRequest('/api/bko/applications','GET',null,cookie),env);
+  assert.equal(allowed.status,200);
+});
+
+test('ativação opcional do MFA exige senha atual e não cria chave após tentativa inválida',async()=>{
+  const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  const missing=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env);
+  assert.equal(missing.status,400);
+  const wrong=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Incorreta-Demonstracao!2026'},cookie),env);
+  assert.equal(wrong.status,401);
+  assert.equal(db.sqlite.prepare("SELECT mfa_secret FROM auth_users WHERE role='ADMIN'").get().mfa_secret,null);
+  const success=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Admin-Demonstracao!2026'},cookie),env);
+  assert.equal(success.status,200);
+});
+
+test('ativação MFA limita tentativas de senha e não permite liberar a chave na nona tentativa',async()=>{
+  const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  for(let attempt=0;attempt<8;attempt++){
+    const wrong=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Errada-Demonstracao!2026'},cookie),env);
+    assert.equal(wrong.status,401);
+  }
+  const blocked=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Admin-Demonstracao!2026'},cookie),env);
+  assert.equal(blocked.status,429);
+  assert.equal(db.sqlite.prepare("SELECT mfa_secret FROM auth_users WHERE role='ADMIN'").get().mfa_secret,null);
+});
+
+test('opt-in MFA gera chave nova, inutiliza a exposta e passa a exigir código em novas sessões',async()=>{
+  const db=createTestDb(),env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
+  const setup=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Admin-Demonstracao!2026'},cookie),env);
   assert.equal(setup.status,200);
-  const {secret}=await setup.json();
+  const {secret:oldSecret}=await setup.json();
+  const renewed=await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{password:'Senha-Admin-Demonstracao!2026'},cookie),env);
+  assert.equal(renewed.status,200);
+  const {secret}=await renewed.json();
+  assert.notEqual(secret,oldSecret);
+  const oldCode=await generateTotp(oldSecret);
+  assert.equal((await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code:oldCode},cookie),env)).status,400);
   const code=await generateTotp(secret);
   const verify=await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env);
   assert.equal(verify.status,200);
@@ -66,6 +102,13 @@ test('ADMIN exige TOTP para acessar fila e rejeita reutilização do mesmo códi
   assert.equal(replay.status,400);
   const allowed=await worker.fetch(apiRequest('/api/bko/applications','GET',null,cookie),env);
   assert.equal(allowed.status,200);
+  const fresh=await worker.fetch(apiRequest('/api/auth/login','POST',{email:'acesso@centraldosconvenios.com.br',password:'Senha-Admin-Demonstracao!2026'}),env);
+  assert.equal(fresh.status,200);
+  const newCookie=fresh.headers.get('set-cookie').split(';')[0];
+  const state=await (await worker.fetch(apiRequest('/api/me','GET',null,newCookie),env)).json();
+  assert.equal(state.mfaRequired,true);
+  assert.equal(state.mfaEnabled,true);
+  assert.equal((await worker.fetch(apiRequest('/api/bko/applications','GET',null,newCookie),env)).status,403);
 });
 
 test('logout invalida a sessão e rejeita uso posterior do cookie',async()=>{

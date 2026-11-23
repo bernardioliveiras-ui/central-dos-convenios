@@ -75,12 +75,14 @@ npx.cmd wrangler secret delete ADMIN_SETUP_TOKEN
 Remove-Variable SetupToken,Cred,Body -ErrorAction SilentlyContinue
 ```
 
-Entre em `/portal.html` com o e-mail e a senha escolhida; adicione a chave fornecida ao Google/Microsoft Authenticator (TOTP), digite o código de seis dígitos e ative o segundo fator. O ADMIN só vê solicitações após isso. **Faça backup seguro do autenticador antes de usar em produção.** O portal não oferece recuperação automática de MFA; perda do autenticador requer procedimento manual de suporte em ambiente controlado.
+Se a Cloudflare responder com erro `10215` ao excluir o token, remova **apenas `ADMIN_SETUP_TOKEN`** em **Workers & Pages → central-dos-convenios → Configurações → Variáveis e segredos**, confirmando a publicação da alteração no painel. Não apague `SESSION_SECRET`, `PASSWORD_PEPPER` ou `RATE_LIMIT_SALT`.
+
+Entre em `/portal.html` com o e-mail e a senha escolhida. **Na v0.3.2 o MFA é opcional:** enquanto não estiver ativado, o ADMIN entra diretamente no painel de credenciamentos. Se quiser ativá-lo, clique em **Ativar verificação em duas etapas** no painel, confirme sua **senha atual** (somente nessa ativação), configure a **nova** chave no Google/Microsoft Authenticator (TOTP) e confirme com código de seis dígitos. Há limite de tentativas para a confirmação. Uma chave pendente antiga (inclusive a que apareceu em captura de tela) é substituída pelo sistema durante essa configuração. Depois de ativado, o segundo fator passa a ser exigido em novos logins; não há botão para desativar nesta versão. **Faça backup seguro do autenticador antes de ativar.** O portal não oferece recuperação automática de MFA; perda do autenticador requer procedimento manual de suporte em ambiente controlado. Sem MFA, proteja a conta com senha forte e exclusiva.
 
 ## 4. Credenciar corretores e enviar no WhatsApp
 
 1. O profissional preenche o cadastro quando o formulário público estiver legalmente liberado.
-2. O ADMIN entra com MFA e confere SUSEP, e-mail e **WhatsApp** antes de aprovar.
+2. O ADMIN entra com senha (e com MFA também, se tiver ativado) e confere SUSEP, e-mail e **WhatsApp** antes de aprovar.
 3. Clique **Aprovar**. O painel mostra o link individual e o botão **Enviar boas-vindas pelo WhatsApp**.
 4. Clique no botão: o WhatsApp abre com texto e URL já preenchidos. **Você confirma manualmente o envio para o número certo.** Não envie senha; só o link pessoal.
 5. O corretor usa o link em até **24 horas**, cria senha e entra com seu e-mail profissional. O token só funciona uma vez.
@@ -113,7 +115,7 @@ Para abrir o formulário com dados reais:
 npx.cmd wrangler secret put TURNSTILE_SECRET
 ```
 
-4. Teste o Siteverify, hostname/action, fila, MFA, reprovação, WhatsApp, ativação, isolamento de corretores, perda de link, recuperação, rate limit e incidentes na sua conta.
+4. Teste o Siteverify, hostname/action, fila, login ADMIN com MFA desligado e ativado, reprovação, WhatsApp, ativação, isolamento de corretores, perda de link, recuperação, rate limit e incidentes na sua conta.
 5. Após homologação operacional e jurídica, altere `REGISTRATION_OPEN` para `"true"` e publique no GitHub pelo seu fluxo usual.
 
 Até isso acontecer o cadastro público deve permanecer fechado, **mesmo com autenticação ADMIN ativa**. A liberação jurídica não deve ser simulada com documentos fictícios.

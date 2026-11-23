@@ -1,16 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../src/server/worker.js';
-import {generateTotp} from '../src/server/crypto.js';
 import {createTestDb,seedApplication,apiRequest,testEnv,bootstrapAdmin} from './db-helper.js';
 
 async function setup(){
   const db=createTestDb();seedApplication(db);
   const env=testEnv(db),cookie=await bootstrapAdmin(worker,env);
-  const mfa=await (await worker.fetch(apiRequest('/api/auth/mfa/setup','POST',{},cookie),env)).json();
-  const code=await generateTotp(mfa.secret);
-  const verified=await worker.fetch(apiRequest('/api/auth/mfa/verify','POST',{code},cookie),env);
-  assert.equal(verified.status,200);
   return {db,env,cookie};
 }
 

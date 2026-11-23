@@ -21,6 +21,9 @@
 .access-share input{width:100%;padding:14px 12px;border:1px solid #b3d2bd;border-radius:8px;background:white;font-size:12px;color:#205740;overflow:hidden;text-overflow:ellipsis}
 .share-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}.share-actions .btn{padding:13px 18px;white-space:normal;text-align:center;gap:8px}
 .mfa-secret{display:block;padding:14px;background:#f0f6ee;border:1px dashed #8fb397;border-radius:8px;overflow-wrap:anywhere;font-weight:800;letter-spacing:.1em;text-align:center}
+.admin-security-card{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 24px;margin:0 0 23px;background:#fff;border:1px solid #cfdfd1;border-radius:14px;box-shadow:0 12px 32px #173e3408}
+.admin-security-card strong{display:block;color:#194b39;font-size:14px;margin-bottom:6px}.admin-security-card p{color:#718778;font-size:12px;line-height:1.5;margin:0}.admin-security-card button{flex-shrink:0}
+@media(max-width:700px){.admin-security-card{align-items:flex-start;flex-direction:column;padding:18px}.admin-security-card button{width:100%}}
 .demo-simulator{background:white;border:1px solid #d8e7db;border-radius:17px;padding:27px;margin:0 0 26px;box-shadow:0 12px 35px #173e3409;scroll-margin-top:30px}
 .demo-simulator .section-toolbar{margin:0 0 18px;align-items:flex-start}.demo-simulator .section-toolbar h2{font-size:26px;margin:0 0 7px}.demo-simulator .section-toolbar p{font-size:12px;color:#6f8576;margin:0}
 .demo-label{display:inline-block!important;color:#a74b13!important;background:#fff1da;padding:10px 13px;border-radius:30px;letter-spacing:.08em;font-weight:900;white-space:nowrap}

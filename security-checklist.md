@@ -1,6 +1,6 @@
 # Checklist de homologação — segurança e lançamento
 
-**Estado:** pendente. Nenhuma conta real foi configurada ou testada neste pacote.
+**Estado:** homologação de produção pendente. O ZIP não confirma nem modifica automaticamente as contas já existentes no Worker.
 
 ## Infraestrutura e credenciais
 
@@ -9,20 +9,20 @@
 - [ ] Trabalho de hash no Worker em produção validado (100 mil PBKDF2 + HMAC com pepper), além do limite de CPU do plano contratado.
 - [ ] `PORTAL_ORIGIN` conferido; nenhum valor Supabase necessário.
 - [ ] Bootstrap exclusivo do ADMIN concluído e `ADMIN_SETUP_TOKEN` **apagado** dos secrets do Worker.
-- [ ] MFA TOTP do único ADMIN configurado; sessão sem segundo fator rejeitada no backend.
+- [ ] Decisão do proprietário sobre MFA opcional registrada; se ativado no ADMIN, sessão nova sem segundo fator rejeitada no backend. Sem MFA, riscos da autenticação somente por senha aceitos conscientemente.
 - [ ] Convite testado: válido uma vez, expira em 24h e é inutilizável após consumo/reemissão; envio manual WhatsApp confirmado.
 - [ ] HTTPS, CSP, cookies/sessões, CORS, WAF, captcha e cabeçalhos observados no domínio final.
 - [ ] Política de backup, restauração e exportação de auditoria testada.
 
 ## Autorização e isolamento
 
-- [ ] BKO não autenticado (401), corretor tentando BKO (403), BKO sem MFA (403).
+- [ ] BKO não autenticado (401), corretor tentando BKO (403), ADMIN sem MFA ativado autorizado (200), ADMIN com MFA ativado e não verificado bloqueado (403).
 - [ ] Solicitante pendente ou reprovado sem perfil de corretor.
 - [ ] Broker vinculado a outra inscrição sem acesso ao conteúdo dela; nenhuma rota permite informar `role`, `owner_id` ou `broker_id` do cliente.
 - [ ] Conta suspensa bloqueada imediatamente, mesmo se a sessão D1 ainda existir; logout e recuperação revogam sessões.
 - [ ] Duas aprovações concorrentes não resultam em convites adicionais nem autorizações duplicadas.
-- [ ] Reemissão de convite, recuperação de senha e aprovação são auditadas; só ADMIN com MFA pode emitir links.
-- [ ] Fluxos de recuperação, logout, expiração de cookie/sessão e perda de MFA testados.
+- [ ] Reemissão de convite, recuperação de senha e aprovação são auditadas; só ADMIN autenticado (com MFA adicional se ativado) pode emitir links.
+- [ ] Fluxos de recuperação, logout, expiração de cookie/sessão, ativação voluntária de MFA com reconfirmação de senha, chave nova e limite de tentativas, além da perda de MFA, testados.
 
 ## Cadastros e dados pessoais
 
