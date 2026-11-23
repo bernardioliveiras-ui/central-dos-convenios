@@ -1,6 +1,6 @@
 # Central dos Convênios — Portal de Corretores v0.2
 
-Landing page independente + cadastro real de corretores + análise pelo BKO + convite de acesso + painel do corretor. Cores e logotipo da Central dos Convênios. A carteira particular de contatos **não é importada nem cadastrada**.
+Landing page independente + cadastro real de corretores + análise pelo administrador da Central + convite de acesso + painel do corretor. Cores e logotipo da Central dos Convênios. A carteira particular de contatos **não é importada nem cadastrada**.
 
 **IMPORTANTE:** este pacote é uma implementação inicial para configuração, homologação e auditoria. **Não está publicado nem pronto para receber tráfego pago com dados reais.** Sem as contas, credenciais, verificação jurídica e testes operacionais do proprietário, os formulários permanecem fechados por configuração. Ninguém deve interpretar o código ou os testes automatizados como certificação de segurança.
 
@@ -10,14 +10,14 @@ Landing page independente + cadastro real de corretores + análise pelo BKO + co
 - Formulário público de dados **profissionais do corretor**, sem campo para carteira de leads e sem preços fictícios.
 - API própria no Cloudflare Worker, banco Cloudflare D1, Turnstile com verificação no backend e limite simples de requisições.
 - Portal de login individual por **Supabase Auth** (provedor externo independente de GPT); tokens de sessão guardados apenas na aba atual pelo SDK, nunca usados como fonte de autorização.
-- Fila BKO Santana com decisão manual, motivo interno de reprovação, auditoria de decisão, convite de ativação e reenvio de convite falho.
-- A API verifica a sessão junto à Supabase e consulta a permissão atual no D1 em cada operação restrita. BKO exige MFA AAL2.
+- Fila de credenciamento operada pelo único administrador da Central, com decisão manual, motivo interno de reprovação, auditoria de decisão, convite de ativação e reenvio de convite falho.
+- A API verifica a sessão junto à Supabase e consulta a permissão atual no D1 em cada operação restrita. O administrador exige MFA AAL2.
 - Painel do corretor com produtos e aviso de que **cotações comerciais estão desativadas** até homologação das tabelas.
 
 ## O que não existe ainda
 
 - Cotação de preços em tempo real, tabelas/APIs de operadoras, envio de propostas, comissões ou carteira de leads.
-- Conta Supabase, usuários BKO, banco D1 ou site Cloudflare criados para você.
+- Conta Supabase, acesso ADMIN, perfis de corretores ou infraestrutura operacional provisionados por este pacote.
 - Envio de convites garantido: depende de provedor de e-mails da Supabase corretamente configurado, domínio permitido e confirmação de entrega.
 - Revisão da LGPD, de termos de parceria, teste independente de segurança, backup e rotinas de suporte definidos pelo proprietário.
 
@@ -91,15 +91,15 @@ npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 
 A aprovação usa a API administrativa da Supabase Auth para convidar o e-mail informado. O link e a conta são geridos pelo provedor; a Central **não armazena o token de convite**. Se o convite for emitido mas a ligação ao D1 falhar, o login é negado e a equipe precisará reconciliar manualmente. Não cadastre corretores na Supabase por fora da fila autorizada.
 
-## 4. Criar a conta do Santana no BKO
+## 4. Criar o único acesso ADMIN da Central
 
-Um administrador da Central deverá verificar a identidade do responsável e criar/invitar a conta dele pela Supabase. Depois de confirmar **pessoalmente** o e-mail e o `auth_user_id` na interface administrativa, rode no D1 um SQL equivalente a este (substitua o UUID):
+O e-mail autorizado para o único acesso administrativo é **Acesso@centraldosconvenios.com.br**. Um responsável da Central deverá comprovar que controla essa caixa e criar/invitar essa identidade pela Supabase Auth, sem habilitar autocadastro público. Depois de confirmar **pessoalmente** o e-mail e o `auth_user_id` na interface administrativa, rode no D1 um SQL equivalente a este (substitua o UUID):
 
 ```bash
-npx wrangler d1 execute central_convenios --remote --command="INSERT INTO staff_accounts (auth_user_id,role,label) VALUES ('UUID-VERIFICADO-DA-SUPABASE','BKO','Santana')"
+npx wrangler d1 execute central_convenios --remote --command="INSERT INTO staff_accounts (auth_user_id,role,label) VALUES ('UUID-VERIFICADO-DA-SUPABASE','ADMIN','Central dos Convênios')"
 ```
 
-Não inclua esse UUID em código de frontend. É um dado administrativo e **não é senha**. O Santana acessará `/portal.html` e deverá configurar e confirmar a autenticação TOTP antes de visualizar solicitações. O frontend não pode conceder permissão BKO; a permissão existe apenas no D1.
+Não inclua esse UUID em código de frontend. É um dado administrativo e **não é senha**. O administrador acessará `/portal.html` e deverá configurar e confirmar a autenticação TOTP antes de visualizar solicitações. O frontend não pode conceder permissão ADMIN; a permissão existe apenas no D1. Os corretores terão identidades e perfis individuais vinculados somente após aprovação.
 
 Para suspender acesso da equipe: atualizar `staff_accounts.suspended_at` pelo canal administrativo com auditoria e revogar sessões no provedor. Para suspender um corretor: atualizar `broker_profiles.suspended_at`, registrar auditoria e revogar sessões. Exija procedimento de dupla checagem para essas operações.
 

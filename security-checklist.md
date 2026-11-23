@@ -8,7 +8,7 @@
 - [ ] Segredos `TURNSTILE_SECRET`, `RATE_LIMIT_SALT`, `SUPABASE_SERVICE_ROLE_KEY` definidos no armazenamento seguro da Cloudflare.
 - [ ] `SUPABASE_URL`, `PORTAL_ORIGIN` e chave pública conferidos, inclusive redirects permitidos.
 - [ ] Cadastro público da Supabase **desativado**; apenas convite autorizado.
-- [ ] MFA TOTP do Santana configurado; acesso AAL1 rejeitado no backend.
+- [ ] MFA TOTP do único ADMIN configurado; acesso AAL1 rejeitado no backend.
 - [ ] Convite testado: válido uma vez, expire em 24h e seja inutilizável após consumo. Testar limite/entrega de e-mails via SMTP.
 - [ ] HTTPS, CSP, cookies/sessões, CORS, WAF, captcha e cabeçalhos observados no domínio final.
 - [ ] Política de backup, restauração e exportação de auditoria testada.
