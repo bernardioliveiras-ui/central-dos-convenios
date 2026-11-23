@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "central-convenios-portal",
+  "main": "src/server/worker.js",
+  "compatibility_date": "2026-11-19",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "central_convenios",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "REGISTRATION_OPEN": "false",
+    "LEGAL_APPROVED": "false",
+    "TURNSTILE_SITE_KEY": "",
+    "SUPABASE_URL": "",
+    "SUPABASE_PUBLISHABLE_KEY": "",
+    "PORTAL_ORIGIN": "",
+    "COMPANY_LEGAL_NAME": "",
+    "PRIVACY_POLICY_URL": "",
+    "PARTNER_TERMS_URL": ""
+  },
+  "triggers": {"crons": ["0 4 * * *"]}
+}

@@ -1,0 +1,5 @@
+# Este arquivo é MODELO. NÃO inserir valores reais aqui nem enviar em ZIP.
+# Para testes locais, crie um arquivo .dev.vars ignorado pelo Git.
+TURNSTILE_SECRET=INSERIR_NO_AMBIENTE_LOCAL
+RATE_LIMIT_SALT=USAR_VALOR_ALEATORIO_LONGO
+SUPABASE_SERVICE_ROLE_KEY=NAO_COMPARTILHAR
