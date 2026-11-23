@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "central_convenios",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2e60c9b8-1223-42e8-bdaf-29c1545bda9f",
       "migrations_dir": "migrations"
     }
   ],
