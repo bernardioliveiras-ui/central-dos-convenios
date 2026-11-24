@@ -79,6 +79,54 @@ Se a Cloudflare responder com erro `10215` ao excluir o token, remova **apenas `
 
 Entre em `/portal.html` com o e-mail e a senha escolhida. **Na v0.3.2 o MFA é opcional:** enquanto não estiver ativado, o ADMIN entra diretamente no painel de credenciamentos. Se quiser ativá-lo, clique em **Ativar verificação em duas etapas** no painel, confirme sua **senha atual** (somente nessa ativação), configure a **nova** chave no Google/Microsoft Authenticator (TOTP) e confirme com código de seis dígitos. Há limite de tentativas para a confirmação. Uma chave pendente antiga (inclusive a que apareceu em captura de tela) é substituída pelo sistema durante essa configuração. Depois de ativado, o segundo fator passa a ser exigido em novos logins; não há botão para desativar nesta versão. **Faça backup seguro do autenticador antes de ativar.** O portal não oferece recuperação automática de MFA; perda do autenticador requer procedimento manual de suporte em ambiente controlado. Sem MFA, proteja a conta com senha forte e exclusiva.
 
+## 3A. Esqueci a senha do ADMIN já criado (v0.3.3)
+
+**Este é o fluxo de recuperação, não de criação:** não exclua o ADMIN do D1 e **não** repita `/api/setup/admin`. Se o e-mail já aparece como `ADMIN / ACTIVE` no banco, mantenha tudo como está. A nova senha revogará as sessões administrativas anteriores, preservando os corretores e o MFA eventualmente ativado.
+
+Primeiro substitua os arquivos no GitHub pelo **ZIP v0.3.3** e aguarde a Cloudflare implantar essa versão. No PowerShell da pasta do projeto, digite **uma linha por vez** e aguarde o prompt `PS ...>` reaparecer. Use `npx.cmd`, nunca `npx`, por causa da política de scripts do PowerShell 5.1.
+
+1. Gere um segredo temporário exclusivo, sem imprimi-lo na tela:
+
+```powershell
+$RecoveryToken = node.exe -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+$RecoveryToken.Length
+```
+
+O resultado deve ser **64**. Somente nesse caso envie o segredo ao Worker:
+
+```powershell
+$RecoveryToken | npx.cmd wrangler secret put ADMIN_RECOVERY_TOKEN
+```
+
+2. Escolha uma **senha nova de 12 a 128 caracteres** na janela do Windows, sem digitá-la no comando nem no chat:
+
+```powershell
+$Cred = Get-Credential -UserName 'Acesso@centraldosconvenios.com.br' -Message 'Escolha a NOVA senha ADMIN (12 a 128 caracteres)'
+```
+
+3. Configure a URL, monte a solicitação em uma linha e execute a recuperação. **Cole cada comando separadamente**:
+
+```powershell
+$Site = 'https://central-dos-convenios.bernardioliveiras.workers.dev'
+$Body = @{recoveryToken=$RecoveryToken;email='Acesso@centraldosconvenios.com.br';password=$Cred.GetNetworkCredential().Password} | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "$Site/api/setup/admin/recover" -Method POST -ContentType 'application/json; charset=utf-8' -Body $Body
+```
+
+O sucesso responde que a senha foi atualizada e as sessões anteriores encerradas. **O token só pode ser usado uma vez, mesmo que permaneça configurado temporariamente.**
+
+4. **Imediatamente após o sucesso**, remova o segredo temporário da Cloudflare e limpe as variáveis locais:
+
+```powershell
+npx.cmd wrangler secret delete ADMIN_RECOVERY_TOKEN
+Remove-Variable RecoveryToken,Cred,Body -ErrorAction SilentlyContinue
+```
+
+**Se desistir ou a recuperação falhar:** remova também `ADMIN_RECOVERY_TOKEN` imediatamente, usando o mesmo comando de exclusão acima. Se houve erro de rede e você não sabe se a solicitação chegou ao servidor, teste primeiro o login com a senha nova: ela pode já ter sido aplicada. Se precisar tentar de novo, gere **um token novo** e refaça as etapas desde o começo. Não deixe um segredo de recuperação ativo sem supervisão.
+
+Se a exclusão retornar erro `10215` (com sucesso ou falha da recuperação), remova somente `ADMIN_RECOVERY_TOKEN` pelo painel **Workers & Pages → central-dos-convenios → Configurações → Variáveis e segredos** e clique em **Deploy** para aplicar. **Não apague `SESSION_SECRET`, `RATE_LIMIT_SALT`, `PASSWORD_PEPPER` nem migrações.**
+
+Se alguma etapa falhar, **não envie `$Body`, senha ou token para ninguém**; encaminhe apenas o texto do erro, sem dados sensíveis. Depois do sucesso, abra `/portal.html` e entre com a senha nova. Se você já tinha ativado o MFA antes, ele continuará sendo exigido.
+
 ## 4. Credenciar corretores e enviar no WhatsApp
 
 1. O profissional preenche o cadastro quando o formulário público estiver legalmente liberado.

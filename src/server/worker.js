@@ -73,7 +73,11 @@ async function parseSmallJson(request) {
   if (!request.headers.get('content-type')?.startsWith('application/json')) throw new InputError();
   const raw=await request.text();
   if (raw.length > 1000) throw new InputError();
-  try { return JSON.parse(raw); } catch { throw new InputError(); }
+  try {
+    const input=JSON.parse(raw);
+    if(!input||typeof input!=='object'||Array.isArray(input))throw new InputError();
+    return input;
+  } catch { throw new InputError(); }
 }
 
 async function audit(env, actor,action,targetType,targetId,meta={}) {
@@ -115,6 +119,38 @@ async function bootstrap(request,env){
     env.DB.prepare("INSERT INTO audit_events(id,actor_auth_id,action,target_type,target_id) VALUES (?,?,'ADMIN_CREATED','auth_user',?)").bind(crypto.randomUUID(),id,id)
   ]);
   return json({message:'ADMIN criado. Remova o secret ADMIN_SETUP_TOKEN. A verificação em duas etapas pode ser ativada futuramente no painel.'},201);
+}
+
+async function recoverAdmin(request,env){
+  requireAuthConfig(env);
+  await authRate(request,env,'admin-recovery','admin',5);
+  const input=await parseSmallJson(request);
+  const token=typeof input.recoveryToken==='string'?input.recoveryToken:'';
+  if(typeof env.ADMIN_RECOVERY_TOKEN!=='string'||env.ADMIN_RECOVERY_TOKEN.length<32||
+    token.length<32||token.length>200||!safeEqual(token,env.ADMIN_RECOVERY_TOKEN))
+    return error('Recuperação não autorizada.',403);
+  const email=String(input.email||'').trim().toLowerCase();
+  if(email!=='acesso@centraldosconvenios.com.br')return error('Recuperação não autorizada.',403);
+  const admin=await env.DB.prepare("SELECT id FROM auth_users WHERE role='ADMIN' AND email=?").bind(email).first();
+  if(!admin)return error('Conta ADMIN não encontrada.',404);
+  requirePassword(input.password);
+  // O ID único da auditoria impede reutilização do mesmo token, sem nova migração D1.
+  const marker=await hashToken(`admin-recovery:${token}`,env.SESSION_SECRET);
+  if(await env.DB.prepare('SELECT id FROM audit_events WHERE id=?').bind(marker).first())
+    return error('Token de recuperação já utilizado.',409);
+  const passwordHash=await hashPassword(input.password,env.PASSWORD_PEPPER);
+  try{
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO audit_events(id,actor_auth_id,action,target_type,target_id) VALUES (?,?,'ADMIN_PASSWORD_RECOVERED','auth_user',?)")
+        .bind(marker,admin.id,admin.id),
+      env.DB.prepare("UPDATE auth_users SET password_hash=? WHERE id=? AND role='ADMIN'").bind(passwordHash,admin.id),
+      env.DB.prepare('DELETE FROM auth_sessions WHERE user_id=?').bind(admin.id)
+    ]);
+  }catch(e){
+    if(/UNIQUE|constraint failed/i.test(String(e?.message||'')))return error('Token de recuperação já utilizado.',409);
+    throw e;
+  }
+  return json({message:'Senha atualizada. As sessões antigas foram encerradas. Remova ADMIN_RECOVERY_TOKEN do Worker.'});
 }
 
 async function login(request,env){
@@ -306,6 +342,7 @@ const worker={
       if (url.pathname==='/api/applications' && request.method==='POST') return await register(request,env);
       if(request.method==='POST'&&!sameOrigin(request,env))return error('Origem não permitida.',403);
       if(url.pathname==='/api/setup/admin'&&request.method==='POST')return await bootstrap(request,env);
+      if(url.pathname==='/api/setup/admin/recover'&&request.method==='POST')return await recoverAdmin(request,env);
       if(url.pathname==='/api/auth/login'&&request.method==='POST')return await login(request,env);
       if(url.pathname==='/api/auth/logout'&&request.method==='POST')return await logout(request,env);
       if(url.pathname==='/api/auth/activate'&&request.method==='POST')return await activate(request,env);

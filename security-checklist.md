@@ -9,6 +9,7 @@
 - [ ] Trabalho de hash no Worker em produção validado (100 mil PBKDF2 + HMAC com pepper), além do limite de CPU do plano contratado.
 - [ ] `PORTAL_ORIGIN` conferido; nenhum valor Supabase necessário.
 - [ ] Bootstrap exclusivo do ADMIN concluído e `ADMIN_SETUP_TOKEN` **apagado** dos secrets do Worker.
+- [ ] Se recuperação de senha ADMIN foi usada: token temporário forte e exclusivo, tentativa única e trilha de auditoria; `ADMIN_RECOVERY_TOKEN` removido imediatamente após sucesso, sessões antigas revogadas e login com senha nova testado.
 - [ ] Decisão do proprietário sobre MFA opcional registrada; se ativado no ADMIN, sessão nova sem segundo fator rejeitada no backend. Sem MFA, riscos da autenticação somente por senha aceitos conscientemente.
 - [ ] Convite testado: válido uma vez, expira em 24h e é inutilizável após consumo/reemissão; envio manual WhatsApp confirmado.
 - [ ] HTTPS, CSP, cookies/sessões, CORS, WAF, captcha e cabeçalhos observados no domínio final.
